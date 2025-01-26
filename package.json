@@ -1,0 +1,20 @@
+{
+  "name": "pdf-generator",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "rm -rf dist/ && tsup src/main.ts",
+    "start": "node dist/main.js",
+    "go": "npm install && npm run build && npm run start"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "express": "^4.21.2",
+    "puppeteer-core": "^24.1.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.3",
+    "winston": "^3.17.0"
+  }
+}

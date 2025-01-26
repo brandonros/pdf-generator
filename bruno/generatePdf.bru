@@ -1,0 +1,32 @@
+meta {
+  name: generatePdf
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://localhost:3000/api/rpc
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "id": "{{uuid}}",
+    "method": "generatePdf",
+    "params": {
+      "url": "{{dataUrl}}"
+    }
+  }
+}
+
+script:pre-request {
+  bru.setVar('uuid', require("uuid").v4());
+  
+  const htmlContent = '<html><body><h1>Hello World</h1></body></html>';
+  const base64Content = btoa(htmlContent);
+  const dataUrl = `data:text/html;base64,${base64Content}`;
+  
+  bru.setVar('dataUrl', dataUrl);
+  
+}
