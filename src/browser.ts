@@ -17,7 +17,6 @@ export class BrowserPool {
     
     private readonly POOL_SIZE = 10;
     private readonly MAX_WAIT_MS = 5000;
-    private readonly IDLE_TIMEOUT_MS = 300000;
     private readonly browserWSEndpoint: string;
 
     private constructor(browserWSEndpoint: string) {
