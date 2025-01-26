@@ -14,7 +14,7 @@ export class BrowserPool {
     private browser: Browser | null = null;
     private pool: PooledPage[] = [];
     private connecting = false;
-    private keepaliveInterval: NodeJS.Timeout | null = null;
+    private keepAliveInterval: NodeJS.Timeout | null = null;
     
     private readonly POOL_SIZE = 10;
     private readonly MAX_WAIT_MS = 5000;
@@ -90,13 +90,13 @@ export class BrowserPool {
         }
     }
 
-    private startKeepalive(): void {
-        if (this.keepaliveInterval) {
-            clearInterval(this.keepaliveInterval);
+    private startKeepAlive(): void {
+        if (this.keepAliveInterval) {
+            clearInterval(this.keepAliveInterval);
         }
         
         // Consistent 3-second interval without random delays
-        this.keepaliveInterval = setInterval(async () => {
+        this.keepAliveInterval = setInterval(async () => {
             try {
                 await this.keepAliveBrowser();
             } catch (error) {
@@ -122,7 +122,7 @@ export class BrowserPool {
             });
 
             // Start keepalive interval
-            this.startKeepalive();
+            this.startKeepAlive();
 
             this.browser.on('disconnected', async () => {
                 logger.error('Browser disconnected unexpectedly');
@@ -158,9 +158,9 @@ export class BrowserPool {
 
     private async handleBrowserDisconnection(): Promise<void> {
         // Clear keepalive interval
-        if (this.keepaliveInterval) {
-            clearInterval(this.keepaliveInterval);
-            this.keepaliveInterval = null;
+        if (this.keepAliveInterval) {
+            clearInterval(this.keepAliveInterval);
+            this.keepAliveInterval = null;
         }
 
         for (const pooledPage of this.pool) {
