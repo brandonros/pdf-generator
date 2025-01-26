@@ -26,8 +26,8 @@ export class BrowserPool {
 
     public static getInstance(): BrowserPool {
         if (!BrowserPool.instance) {
-            //BrowserPool.instance = new BrowserPool('wss://chromium.debian-k3s');
-            BrowserPool.instance = new BrowserPool('wss://informally-profound-gecko.ngrok-free.app/');
+            BrowserPool.instance = new BrowserPool('wss://chromium.debian-k3s');
+            //BrowserPool.instance = new BrowserPool('wss://informally-profound-gecko.ngrok-free.app/');
         }
         return BrowserPool.instance;
     }
@@ -183,7 +183,7 @@ export class BrowserPool {
     }
 
     private async acquirePage(): Promise<Page> {
-        const startTime = performance.now();
+        const startTime = Date.now();
         logger.debug('Attempting to acquire page...');
         
         while (true) {
@@ -191,7 +191,7 @@ export class BrowserPool {
             if (pooledPage) {
                 pooledPage.inUse = true;
                 pooledPage.lastUsed = Date.now();
-                const duration = Math.round(performance.now() - startTime);
+                const duration = Math.round(Date.now() - startTime);
                 logger.debug(`[${pooledPage.id}] Page acquired in ${duration}ms`);
                 return pooledPage.page;
             }

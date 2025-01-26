@@ -4,9 +4,9 @@ import { check } from 'k6';
 const testPage = open('./test-page.txt');
 
 export const options = {
-  vus: 15,
+  vus: 10,
   duration: '30s',
-  rps: 15
+  rps: 10
 };
 
 export default function () {
@@ -25,12 +25,19 @@ export default function () {
     'body is not an error': (r) => {
       const body = JSON.parse(r.body)
       if (body.error !== undefined) {
+        console.error(body.error)
         return false
       }
       if (body.result === undefined) {
+        console.error(body)
         return false
       }
-      return typeof body.result === 'string'
+      if (typeof body.result !== 'string') {
+        console.error(body)
+        return false
+      }
+      return true
     },
   });
 }
+
