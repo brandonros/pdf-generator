@@ -1,20 +1,21 @@
+import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 import http from 'k6/http';
 import { check } from 'k6';
 
 const testPage = open('./test-page.txt');
 
 export const options = {
-  vus: 20,
+  vus: 40, // virtual users
+  rps: 40, // requests per second
   duration: '30s',
-  rps: 20
 };
 
 export default function () {
-  const res = http.post('http://localhost:3000/api/rpc', JSON.stringify({
+  const res = http.post('https://pdf-generator.debian-k3s/api/rpc', JSON.stringify({
     jsonrpc: '2.0',
     method: 'generatePdf',
     params: { url: testPage },
-    id: 1
+    id: uuidv4()
   }), {
     headers: {
       'Content-Type': 'application/json',
