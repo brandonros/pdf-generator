@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
-import { BrowserManager } from './browser';
+import { BrowserPool } from './browser';
+import { logger } from './logger';
 
 interface RPCRequest {
     method: string;
@@ -24,8 +25,8 @@ export class RPCHandler {
         try {
             switch (method) {
                 case 'generatePdf': {
-                    const browserManager = BrowserManager.getInstance();
-                    const pdf = await browserManager.capturePDF(params.url);
+                    const browserPool = BrowserPool.getInstance();
+                    const pdf = await browserPool.capturePDF(params.url);
                     res.json({
                         jsonrpc: '2.0',
                         result: Buffer.from(pdf).toString('base64'),
@@ -38,6 +39,9 @@ export class RPCHandler {
                 }
             }
         } catch (error) {
+            logger.error({
+                error: error.message,
+            });
             res.json({
                 jsonrpc: '2.0',
                 error: {
