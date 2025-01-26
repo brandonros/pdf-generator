@@ -4,7 +4,8 @@
   "scripts": {
     "build": "rm -rf dist/ && tsup src/main.ts",
     "start": "node dist/main.js",
-    "go": "npm install && npm run build && npm run start"
+    "go": "npm install && npm run build && npm run start",
+    "benchmark": "k6 run k6/benchmark.mjs"
   },
   "keywords": [],
   "author": "",
