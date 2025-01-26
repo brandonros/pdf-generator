@@ -1,0 +1,11 @@
+node_modules
+dist
+bruno
+k6
+Dockerfile
+.dockerignore
+.git
+.gitignore
+.DS_Store
+.env
+README.md
