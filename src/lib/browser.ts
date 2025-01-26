@@ -1,4 +1,5 @@
 import puppeteer, { Browser, Page } from 'puppeteer-core';
+import assert from 'assert';
 import { logger } from './logger';
 
 interface PooledPage {
@@ -19,14 +20,16 @@ export class BrowserPool {
     private readonly MAX_WAIT_MS = 5000;
     private readonly browserWSEndpoint: string;
 
-    private constructor(browserWSEndpoint: string) {
+    private constructor() {
+        const browserWSEndpoint = process.env.BROWSER_WS_ENDPOINT;
+        assert(browserWSEndpoint, 'BROWSER_WS_ENDPOINT is not set');
         this.browserWSEndpoint = browserWSEndpoint;
         logger.info(`BrowserPool created with endpoint: ${browserWSEndpoint}`);
     }
 
     public static getInstance(): BrowserPool {
         if (!BrowserPool.instance) {
-            BrowserPool.instance = new BrowserPool(process.env.BROWSER_WS_ENDPOINT as string);
+            BrowserPool.instance = new BrowserPool();
         }
         return BrowserPool.instance;
     }
