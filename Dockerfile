@@ -1,15 +1,16 @@
-FROM node:22-alpine
-# Create app directory
+# Build stage
+FROM node:22-alpine AS builder
 WORKDIR /app
-# Install app dependencies
-COPY package.json ./
-COPY package-lock.json ./
+COPY package.json package-lock.json ./
 RUN npm install
-# Bundle app source
 COPY . .
-# Build app
 RUN npm run build
-# Switch to non-root user
+
+# Production stage
+FROM node:22-alpine
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm install --production
+COPY --from=builder /app/dist ./dist
 USER node
-# Export command
 CMD [ "node", "dist/main.js" ]
