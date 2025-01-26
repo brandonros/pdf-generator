@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { BrowserPool } from './browser';
 import { logger } from './logger';
+import retry from 'async-retry';
 
 interface RPCRequest {
     method: string;
@@ -25,8 +26,17 @@ export class RPCHandler {
         try {
             switch (method) {
                 case 'generatePdf': {
-                    const browserPool = BrowserPool.getInstance();
-                    const pdf = await browserPool.capturePDF(params.url);
+                    const pdf = await retry(
+                        async () => {
+                            const browserPool = BrowserPool.getInstance();
+                            return (await browserPool.capturePDF(params.url));
+                        },
+                        {
+                            retries: 4, // 5 attempts total (1 initial + 4 retries)
+                            minTimeout: 0,
+                            maxTimeout: 0,
+                        }
+                    );
                     res.json({
                         jsonrpc: '2.0',
                         result: Buffer.from(pdf).toString('base64'),
