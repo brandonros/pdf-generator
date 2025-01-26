@@ -32,9 +32,7 @@ export class Server {
                 switch (method) {
                     case 'generatePdf': {
                         const browserManager = BrowserManager.getInstance();
-                        await browserManager.connect();
                         const pdf = await browserManager.capturePDF(params.url);
-                        await browserManager.disconnect();
                         res.json({
                             jsonrpc: '2.0',
                             result: Buffer.from(pdf).toString('base64'),

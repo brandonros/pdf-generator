@@ -4,7 +4,9 @@ import { logger } from './logger';
 export class BrowserManager {
     private static instance: BrowserManager;
     private browser: Browser | null = null;
-
+    private pagePool: Page[] = [];
+    private readonly poolSize = 10; // Configurable pool size
+    private readonly browserWSEndpoint = 'wss://chromium.debian-k3s';
     private constructor() {}
 
     public static getInstance(): BrowserManager {
@@ -14,17 +16,53 @@ export class BrowserManager {
         return BrowserManager.instance;
     }
 
-    async connect(): Promise<void> {
+    private async createPage(): Promise<Page> {
+        const page = await this.browser!.newPage();
+        await page.setViewport({
+            width: 1920,
+            height: 1080,
+            deviceScaleFactor: 1
+        });
+        return page;
+    }
+
+    private async initializePagePool(): Promise<void> {
+        logger.info(`Initializing page pool with size ${this.poolSize}`);
+        for (let i = 0; i < this.poolSize; i++) {
+            const page = await this.createPage();
+            this.pagePool.push(page);
+        }
+    }
+
+    private async acquirePage(): Promise<Page> {
+        if (this.pagePool.length > 0) {
+            return this.pagePool.pop()!;
+        }
+        logger.warn('Page pool exhausted, creating new page');
+        return this.createPage();
+    }
+
+    private async releasePage(page: Page): Promise<void> {
+        if (this.pagePool.length < this.poolSize) {
+            // Reset page state if needed
+            await page.goto('about:blank');
+            this.pagePool.push(page);
+        } else {
+            await page.close();
+        }
+    }
+
+    async initialize(): Promise<void> {
         try {
-            // Launch browser if not already connected
             if (!this.browser) {
                 this.browser = await puppeteer.connect({
-                    browserWSEndpoint: 'wss://chromium.debian-k3s'
+                    browserWSEndpoint: this.browserWSEndpoint
                 });
-                logger.info('Browser connected successfully');
+                await this.initializePagePool();
+                logger.info('Browser connected and pool initialized successfully');
             }
         } catch (error) {
-            logger.error('Error connecting to browser:', error);
+            logger.error('Error initializing browser:', error);
             throw error;
         }
     }
@@ -32,43 +70,36 @@ export class BrowserManager {
     async capturePDF(url: string): Promise<Uint8Array> {
         try {
             if (!this.browser) {
-                await this.connect();
+                await this.initialize();
             }
 
-            // Create new page
-            const page = await this.browser!.newPage();
+            const page = await this.acquirePage();
             
-            // Set viewport
-            await page.setViewport({
-                width: 1920,
-                height: 1080,
-                deviceScaleFactor: 1
-            });
+            try {
+                // Navigate to URL
+                await page.goto(url, {
+                    waitUntil: 'networkidle0',
+                    timeout: 30000
+                });
 
-            // Navigate to URL
-            await page.goto(url, {
-                waitUntil: 'networkidle0',
-                timeout: 30000
-            });
+                // Generate PDF
+                const pdf = await page.pdf({
+                    format: 'A4',
+                    printBackground: true,
+                    margin: {
+                        top: '20px',
+                        right: '20px',
+                        bottom: '20px',
+                        left: '20px'
+                    }
+                });
 
-            // Generate PDF
-            const pdf = await page.pdf({
-                format: 'A4',
-                printBackground: true,
-                margin: {
-                    top: '20px',
-                    right: '20px',
-                    bottom: '20px',
-                    left: '20px'
-                }
-            });
-
-            // Close page
-            await page.close();
-            
-            logger.info('PDF captured successfully');
-
-            return pdf;
+                logger.info('PDF captured successfully');
+                return pdf;
+            } finally {
+                // Always release the page back to the pool
+                await this.releasePage(page);
+            }
         } catch (error) {
             logger.error('Error capturing PDF:', error);
             throw error;
@@ -77,6 +108,11 @@ export class BrowserManager {
 
     async disconnect(): Promise<void> {
         if (this.browser) {
+            // Close all pages in the pool
+            while (this.pagePool.length > 0) {
+                const page = this.pagePool.pop();
+                if (page) await page.close();
+            }
             await this.browser.close();
             this.browser = null;
             logger.info('Browser disconnected successfully');
