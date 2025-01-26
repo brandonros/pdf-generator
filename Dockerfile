@@ -14,8 +14,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-RUN chown -R node:node /app
-USER node
+RUN chown -R chrome:chrome /app
+USER chrome
 RUN npm install --production
 COPY --from=builder /app/dist ./dist
 CMD [ "node", "dist/main.js" ]
