@@ -13,7 +13,7 @@ export class BrowserPool {
     private browser: Browser | null = null;
     private pool: PooledPage[] = [];
     private connecting = false;
-    private pageCounter = 0;
+    private keepaliveInterval: NodeJS.Timeout | null = null;
     
     private readonly POOL_SIZE = 10;
     private readonly MAX_WAIT_MS = 5000;
@@ -72,6 +72,37 @@ export class BrowserPool {
         }
     }
 
+    private async keepAliveBrowser(): Promise<void> {
+        if (!this.browser) return;
+        
+        try {
+            // More robust health check using a test page
+            const testPage = await this.browser.newPage();
+            await testPage.goto('about:blank');
+            await testPage.close();
+            
+            logger.debug('Browser keepalive check successful');
+        } catch (error) {
+            logger.error('Browser keepalive check failed:', error);
+            await this.handleBrowserDisconnection();
+        }
+    }
+
+    private startKeepalive(): void {
+        if (this.keepaliveInterval) {
+            clearInterval(this.keepaliveInterval);
+        }
+        
+        // Consistent 3-second interval without random delays
+        this.keepaliveInterval = setInterval(async () => {
+            try {
+                await this.keepAliveBrowser();
+            } catch (error) {
+                logger.error('Keepalive interval error:', error);
+            }
+        }, 3000);
+    }
+
     async initialize(): Promise<void> {
         if (this.browser || this.connecting) {
             logger.debug('Initialize called but browser already exists or connecting');
@@ -87,6 +118,9 @@ export class BrowserPool {
                 browserWSEndpoint: this.browserWSEndpoint,
                 defaultViewport: { width: 1920, height: 1080, deviceScaleFactor: 1 }
             });
+
+            // Start keepalive interval
+            this.startKeepalive();
 
             this.browser.on('disconnected', async () => {
                 logger.error('Browser disconnected unexpectedly');
@@ -121,6 +155,12 @@ export class BrowserPool {
     }
 
     private async handleBrowserDisconnection(): Promise<void> {
+        // Clear keepalive interval
+        if (this.keepaliveInterval) {
+            clearInterval(this.keepaliveInterval);
+            this.keepaliveInterval = null;
+        }
+
         for (const pooledPage of this.pool) {
             try {
                 await pooledPage.page.close().catch(() => {});
@@ -162,7 +202,7 @@ export class BrowserPool {
                 throw new Error('Timeout waiting for available page');
             }
 
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 50));
             logger.debug('No page available, retrying...');
         }
     }
