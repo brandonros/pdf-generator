@@ -1,8 +1,8 @@
 process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
 
-import { Server } from "./server";
-import { BrowserPool } from "./browser";
-import { logger } from './logger';
+import { Server } from "./lib/server";
+import { BrowserPool } from "./lib/browser";
+import { logger } from './lib/logger';
 
 const main = async  () => {
   try {
