@@ -1,6 +1,6 @@
 import express, { Express } from 'express';
 import { logger } from './logger';
-import { BrowserManager } from './browser';
+import { RPCHandler } from './rpc';
 
 export class Server {
     private static instance: Server;
@@ -26,35 +26,7 @@ export class Server {
 
         // Add your routes here
         this.app.get('/api/ping', (_req, res) => res.send('pong'));
-        this.app.post('/api/rpc', async (req, res) => {
-            const { method, params, id } = req.body;
-            try {
-                switch (method) {
-                    case 'generatePdf': {
-                        const browserManager = BrowserManager.getInstance();
-                        const pdf = await browserManager.capturePDF(params.url);
-                        res.json({
-                            jsonrpc: '2.0',
-                            result: Buffer.from(pdf).toString('base64'),
-                            id
-                        });
-                        break;
-                    }
-                    default: {
-                        throw new Error(`Unknown method: ${method}`);
-                    }
-                }
-            } catch (error) {
-                res.json({
-                    jsonrpc: '2.0',
-                    error: {
-                        code: -32603,
-                        message: error.message
-                    },
-                    id
-                });
-            }
-        });
+        this.app.post('/api/rpc', (req, res) => RPCHandler.getInstance().handleRequest(req, res));
 
         // Start the server
         await new Promise((resolve) => this.app.listen(this.port, resolve));

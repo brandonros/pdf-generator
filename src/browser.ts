@@ -1,12 +1,15 @@
+import { Mutex } from 'async-mutex';
 import puppeteer, { Browser, Page } from 'puppeteer-core';
 import { logger } from './logger';
 
 export class BrowserManager {
     private static instance: BrowserManager;
     private browser: Browser | null = null;
-    private pagePool: Page[] = [];
-    private readonly poolSize = 10; // Configurable pool size
+    private pages: Array<{ page: Page; inUse: boolean }> = [];
+    private mutex = new Mutex();
+    private readonly poolSize = 10;
     private readonly browserWSEndpoint = 'wss://chromium.debian-k3s';
+
     private constructor() {}
 
     public static getInstance(): BrowserManager {
@@ -18,104 +21,90 @@ export class BrowserManager {
 
     private async createPage(): Promise<Page> {
         const page = await this.browser!.newPage();
-        await page.setViewport({
-            width: 1920,
-            height: 1080,
-            deviceScaleFactor: 1
-        });
+        await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
         return page;
     }
 
-    private async initializePagePool(): Promise<void> {
-        logger.info(`Initializing page pool with size ${this.poolSize}`);
-        for (let i = 0; i < this.poolSize; i++) {
-            const page = await this.createPage();
-            this.pagePool.push(page);
-        }
-    }
-
-    private async acquirePage(): Promise<Page> {
-        if (this.pagePool.length > 0) {
-            return this.pagePool.pop()!;
-        }
-        logger.warn('Page pool exhausted, creating new page');
-        return this.createPage();
-    }
-
-    private async releasePage(page: Page): Promise<void> {
-        if (this.pagePool.length < this.poolSize) {
-            // Reset page state if needed
-            await page.goto('about:blank');
-            this.pagePool.push(page);
-        } else {
-            await page.close();
-        }
-    }
-
     async initialize(): Promise<void> {
+        if (this.browser) return;
+
+        await this.mutex.acquire();
         try {
             if (!this.browser) {
                 this.browser = await puppeteer.connect({
                     browserWSEndpoint: this.browserWSEndpoint
                 });
-                await this.initializePagePool();
-                logger.info('Browser connected and pool initialized successfully');
+
+                // Initialize page pool
+                for (let i = 0; i < this.poolSize; i++) {
+                    const page = await this.createPage();
+                    this.pages.push({ page, inUse: false });
+                }
+                logger.info('Browser and page pool initialized');
             }
-        } catch (error) {
-            logger.error('Error initializing browser:', error);
-            throw error;
+        } finally {
+            this.mutex.release();
         }
     }
 
+    private async getAvailablePage(): Promise<Page> {
+        return await this.mutex.runExclusive(async () => {
+            // Find first available page
+            const pageEntry = this.pages.find(p => !p.inUse);
+            if (pageEntry) {
+                pageEntry.inUse = true;
+                return pageEntry.page;
+            }
+
+            // Create new page if pool is exhausted
+            logger.warn('Page pool exhausted, creating new page');
+            const newPage = await this.createPage();
+            this.pages.push({ page: newPage, inUse: true });
+            return newPage;
+        });
+    }
+
+    private async releasePage(page: Page): Promise<void> {
+        await this.mutex.runExclusive(async () => {
+            const pageEntry = this.pages.find(p => p.page === page);
+            if (pageEntry) {
+                await page.goto('about:blank');
+                pageEntry.inUse = false;
+            }
+        });
+    }
+
     async capturePDF(url: string): Promise<Uint8Array> {
+        if (!this.browser) await this.initialize();
+        
+        const page = await this.getAvailablePage();
         try {
-            if (!this.browser) {
-                await this.initialize();
-            }
+            await page.goto(url, {
+                waitUntil: 'load',
+                timeout: 30000
+            });
 
-            const page = await this.acquirePage();
-            
-            try {
-                // Navigate to URL
-                await page.goto(url, {
-                    waitUntil: 'networkidle0',
-                    timeout: 30000
-                });
+            const pdf = await page.pdf({
+                format: 'A4',
+                printBackground: true,
+                margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' }
+            });
 
-                // Generate PDF
-                const pdf = await page.pdf({
-                    format: 'A4',
-                    printBackground: true,
-                    margin: {
-                        top: '20px',
-                        right: '20px',
-                        bottom: '20px',
-                        left: '20px'
-                    }
-                });
-
-                logger.info('PDF captured successfully');
-                return pdf;
-            } finally {
-                // Always release the page back to the pool
-                await this.releasePage(page);
-            }
-        } catch (error) {
-            logger.error('Error capturing PDF:', error);
-            throw error;
+            return pdf;
+        } finally {
+            await this.releasePage(page);
         }
     }
 
     async disconnect(): Promise<void> {
-        if (this.browser) {
-            // Close all pages in the pool
-            while (this.pagePool.length > 0) {
-                const page = this.pagePool.pop();
-                if (page) await page.close();
+        await this.mutex.runExclusive(async () => {
+            if (this.browser) {
+                await Promise.all(this.pages.map(p => p.page.close()));
+                await this.browser.close();
+                this.browser = null;
+                this.pages = [];
+                logger.info('Browser disconnected');
             }
-            await this.browser.close();
-            this.browser = null;
-            logger.info('Browser disconnected successfully');
-        }
+        });
     }
 }
