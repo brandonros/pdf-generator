@@ -1,6 +1,7 @@
 import puppeteer, { Browser, Page } from 'puppeteer-core';
 import assert from 'assert';
 import { logger } from './logger';
+import retry from 'async-retry';
 
 interface PooledPage {
     page: Page;
@@ -25,6 +26,7 @@ export class BrowserPool {
         assert(browserWSEndpoint, 'BROWSER_WS_ENDPOINT is not set');
         this.browserWSEndpoint = browserWSEndpoint;
         logger.info(`BrowserPool created with endpoint: ${browserWSEndpoint}`);
+        this.setupProcessHandlers();
     }
 
     public static getInstance(): BrowserPool {
@@ -34,31 +36,57 @@ export class BrowserPool {
         return BrowserPool.instance;
     }
 
+    private setupProcessHandlers(): void {
+        process.on('unhandledRejection', async (reason, promise) => {
+            logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+            
+            // If it's a target closed error, attempt recovery
+            if (reason instanceof Error && 
+                (reason.message.includes('Target closed') || 
+                 reason.message.includes('Session closed'))) {
+                try {
+                    await this.handleBrowserDisconnection();
+                } catch (error) {
+                    logger.error('Failed to recover from unhandled rejection:', error);
+                }
+            }
+        });
+    }    
+
     private async createPage(pageId: string): Promise<Page> {
         const startTime = performance.now();
         logger.debug(`[${pageId}] Creating new page...`);
 
-        const page = await this.browser!.newPage();
-        await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+        try {
+            const page = await this.browser!.newPage();
+            await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
 
-        page.on('close', () => {
-            logger.warn(`[${pageId}] Page closed unexpectedly`);
-            this.handlePageDisconnection(page, pageId);
-        });
+            page.on('close', () => {
+                logger.warn(`[${pageId}] Page closed unexpectedly`);
+                this.handlePageDisconnection(page, pageId);
+            });
 
-        page.on('error', (err) => {
-            logger.error(`[${pageId}] Page error:`, err);
-            this.handlePageDisconnection(page, pageId);
-        });
+            page.on('error', (err) => {
+                logger.error(`[${pageId}] Page error:`, err);
+                this.handlePageDisconnection(page, pageId);
+            });
 
-        page.on('pageerror', (err) => {
-            logger.error(`[${pageId}] Page error:`, err);
-            this.handlePageDisconnection(page, pageId);
-        });
+            page.on('pageerror', (err) => {
+                logger.error(`[${pageId}] Page error:`, err);
+                this.handlePageDisconnection(page, pageId);
+            });
 
-        const duration = Math.round(performance.now() - startTime);
-        logger.debug(`[${pageId}] Page created in ${duration}ms`);
-        return page;
+            const duration = Math.round(performance.now() - startTime);
+            logger.debug(`[${pageId}] Page created in ${duration}ms`);
+            return page;
+        } catch (error) {
+            logger.error(`[${pageId}] Failed to create page:`, error);
+            // If page creation fails, we might need to reconnect the browser
+            if (error.message.includes('Target closed') || error.message.includes('Session closed')) {
+                await this.handleBrowserDisconnection();
+            }
+            throw error;
+        }
     }
 
     private async handlePageDisconnection(page: Page, pageId: string): Promise<void> {
@@ -111,7 +139,7 @@ export class BrowserPool {
             return;
         }
         
-        const startTime = performance.now();
+        const startTime = Date.now();
         this.connecting = true;
         logger.info('Starting browser pool initialization...');
 
@@ -121,9 +149,7 @@ export class BrowserPool {
                 defaultViewport: { width: 1920, height: 1080, deviceScaleFactor: 1 }
             });
 
-            // Start keepalive interval
-            this.startKeepAlive();
-
+            // Add connection error handler
             this.browser.on('disconnected', async () => {
                 logger.error('Browser disconnected unexpectedly');
                 await this.handleBrowserDisconnection();
@@ -133,23 +159,33 @@ export class BrowserPool {
                 logger.warn('Browser target destroyed:', target.url());
             });
 
-            logger.debug(`Browser connected in ${Math.round(performance.now() - startTime)}ms`);
+            logger.debug(`Browser connected in ${Math.round(Date.now() - startTime)}ms`);
 
+            // Start keepalive after successful connection
+            this.startKeepAlive();
+
+            // Initialize pool
             for (let i = 0; i < this.POOL_SIZE; i++) {
                 const pageId = `page_${i}`;
-                const page = await this.createPage(pageId);
-                this.pool.push({
-                    page,
-                    inUse: false,
-                    lastUsed: Date.now(),
-                    id: pageId
-                });
+                try {
+                    const page = await this.createPage(pageId);
+                    this.pool.push({
+                        page,
+                        inUse: false,
+                        lastUsed: Date.now(),
+                        id: pageId
+                    });
+                } catch (error) {
+                    logger.error(`Failed to create page ${pageId}:`, error);
+                    throw error;
+                }
             }
             
             const duration = Math.round(performance.now() - startTime);
-            logger.info(`Browser pool initialized with ${this.POOL_SIZE} pages in ${duration}ms`);
+            logger.info(`Browser pool initialized with ${this.pool.length}/${this.POOL_SIZE} pages in ${duration}ms`);
         } catch (error) {
             logger.error('Failed to initialize browser pool:', error);
+            await this.handleBrowserDisconnection();
             throw error;
         } finally {
             this.connecting = false;
@@ -157,12 +193,15 @@ export class BrowserPool {
     }
 
     private async handleBrowserDisconnection(): Promise<void> {
+        logger.warn('Handling browser disconnection...');
+        
         // Clear keepalive interval
         if (this.keepAliveInterval) {
             clearInterval(this.keepAliveInterval);
             this.keepAliveInterval = null;
         }
 
+        // Clear the pool
         for (const pooledPage of this.pool) {
             try {
                 await pooledPage.page.close().catch(() => {});
@@ -176,10 +215,27 @@ export class BrowserPool {
         this.connecting = false;
         
         try {
-            await this.initialize();
-            logger.info('Successfully reconnected to browser');
+            await retry(
+                async (bail) => {
+                    await this.initialize();
+                    logger.info('Successfully reconnected to browser');
+                },
+                {
+                    retries: 2,
+                    factor: 0,
+                    minTimeout: 0,
+                    maxTimeout: 0,
+                    onRetry: (error, attempt) => {
+                        logger.warn(
+                            `Reconnection attempt ${attempt} failed:`,
+                            error,
+                            `- Retrying...`
+                        );
+                    },
+                }
+            );
         } catch (error) {
-            logger.error('Failed to reconnect to browser:', error);
+            logger.error('Failed to reconnect after maximum attempts:', error);
             throw error;
         }
     }
