@@ -26,14 +26,14 @@ export class BrowserPool {
 
     public static getInstance(): BrowserPool {
         if (!BrowserPool.instance) {
-            BrowserPool.instance = new BrowserPool('wss://chromium.debian-k3s');
+            //BrowserPool.instance = new BrowserPool('wss://chromium.debian-k3s');
+            BrowserPool.instance = new BrowserPool('wss://informally-profound-gecko.ngrok-free.app/');
         }
         return BrowserPool.instance;
     }
 
-    private async createPage(): Promise<Page> {
+    private async createPage(pageId: string): Promise<Page> {
         const startTime = performance.now();
-        const pageId = `page_${++this.pageCounter}`;
         logger.debug(`[${pageId}] Creating new page...`);
 
         const page = await this.browser!.newPage();
@@ -60,7 +60,7 @@ export class BrowserPool {
     }
 
     private async handlePageDisconnection(page: Page, pageId: string): Promise<void> {
-        const pooledPage = this.pool.find(p => p.page === page);
+        const pooledPage = this.pool.find(p => p.page === page); // TODO: why not by pageId?
         if (pooledPage) {
             logger.warn(`[${pageId}] Handling page disconnection`);
             try {
@@ -68,7 +68,6 @@ export class BrowserPool {
                 logger.info(`[${pageId}] Successfully replaced disconnected page`);
             } catch (err) {
                 logger.error(`[${pageId}] Failed to replace disconnected page:`, err);
-                this.pool = this.pool.filter(p => p !== pooledPage);
             }
         }
     }
@@ -101,8 +100,8 @@ export class BrowserPool {
             logger.debug(`Browser connected in ${Math.round(performance.now() - startTime)}ms`);
 
             for (let i = 0; i < this.POOL_SIZE; i++) {
-                const page = await this.createPage();
-                const pageId = `page_${this.pageCounter}`;
+                const pageId = `page_${i}`;
+                const page = await this.createPage(pageId);
                 this.pool.push({
                     page,
                     inUse: false,
@@ -170,20 +169,20 @@ export class BrowserPool {
 
     private async replacePage(pooledPage: PooledPage): Promise<void> {
         try {
-            logger.debug('Closing page')
+            logger.debug(`[${pooledPage.id}] Closing page`);
             await pooledPage.page.close();
         } catch (error) {
-            logger.error('Error closing broken page:', error);
+            logger.error(`[${pooledPage.id}] Error closing broken page:`, error);
         }
 
         try {
-            logger.debug('Creating new page')
-            const newPage = await this.createPage();
+            logger.debug(`[${pooledPage.id}] Creating new page`);
+            const newPage = await this.createPage(pooledPage.id);
             pooledPage.page = newPage;
             pooledPage.inUse = false;
             pooledPage.lastUsed = Date.now();
         } catch (error) {
-            logger.error('Error creating replacement page:', error);
+            logger.error(`[${pooledPage.id}] Error creating replacement page:`, error);
             throw error;
         }
     }
