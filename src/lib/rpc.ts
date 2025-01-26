@@ -32,9 +32,17 @@ export class RPCHandler {
                             return (await browserPool.capturePDF(params.url));
                         },
                         {
-                            retries: 2, // 3 attempts total (1 initial + 2 retries)
+                            retries: 2,
                             minTimeout: 0,
                             maxTimeout: 0,
+                            onRetry: (error: any, attempt: number) => {
+                                logger.warn({
+                                    message: 'PDF generation failed, retrying',
+                                    attempt,
+                                    error: error.message,
+                                    url: params.url
+                                });
+                            }
                         }
                     );
                     res.json({
