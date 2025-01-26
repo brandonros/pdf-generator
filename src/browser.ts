@@ -42,17 +42,36 @@ export class BrowserPool {
 
         page.on('close', () => {
             logger.warn(`[${pageId}] Page closed unexpectedly`);
-            const pooledPage = this.pool.find(p => p.page === page);
-            if (pooledPage) {
-                this.replacePage(pooledPage).catch(err => 
-                    logger.error(`[${pageId}] Failed to replace disconnected page:`, err)
-                );
-            }
+            this.handlePageDisconnection(page, pageId);
+        });
+
+        page.on('error', (err) => {
+            logger.error(`[${pageId}] Page error:`, err);
+            this.handlePageDisconnection(page, pageId);
+        });
+
+        page.on('pageerror', (err) => {
+            logger.error(`[${pageId}] Page error:`, err);
+            this.handlePageDisconnection(page, pageId);
         });
 
         const duration = Math.round(performance.now() - startTime);
         logger.debug(`[${pageId}] Page created in ${duration}ms`);
         return page;
+    }
+
+    private async handlePageDisconnection(page: Page, pageId: string): Promise<void> {
+        const pooledPage = this.pool.find(p => p.page === page);
+        if (pooledPage) {
+            logger.warn(`[${pageId}] Handling page disconnection`);
+            try {
+                await this.replacePage(pooledPage);
+                logger.info(`[${pageId}] Successfully replaced disconnected page`);
+            } catch (err) {
+                logger.error(`[${pageId}] Failed to replace disconnected page:`, err);
+                this.pool = this.pool.filter(p => p !== pooledPage);
+            }
+        }
     }
 
     async initialize(): Promise<void> {
@@ -67,21 +86,17 @@ export class BrowserPool {
 
         try {
             this.browser = await puppeteer.connect({
-                browserWSEndpoint: this.browserWSEndpoint
+                browserWSEndpoint: this.browserWSEndpoint,
+                defaultViewport: { width: 1920, height: 1080, deviceScaleFactor: 1 }
             });
 
             this.browser.on('disconnected', async () => {
                 logger.error('Browser disconnected unexpectedly');
-                this.browser = null;
-                this.pool = [];
-                this.connecting = false;
-                
-                try {
-                    await this.initialize();
-                    logger.info('Successfully reconnected to browser');
-                } catch (error) {
-                    logger.error('Failed to reconnect to browser:', error);
-                }
+                await this.handleBrowserDisconnection();
+            });
+
+            this.browser.on('targetdestroyed', (target) => {
+                logger.warn('Browser target destroyed:', target.url());
             });
 
             logger.debug(`Browser connected in ${Math.round(performance.now() - startTime)}ms`);
@@ -104,6 +119,28 @@ export class BrowserPool {
             throw error;
         } finally {
             this.connecting = false;
+        }
+    }
+
+    private async handleBrowserDisconnection(): Promise<void> {
+        for (const pooledPage of this.pool) {
+            try {
+                await pooledPage.page.close().catch(() => {});
+            } catch (error) {
+                logger.error(`Failed to close page ${pooledPage.id}:`, error);
+            }
+        }
+
+        this.browser = null;
+        this.pool = [];
+        this.connecting = false;
+        
+        try {
+            await this.initialize();
+            logger.info('Successfully reconnected to browser');
+        } catch (error) {
+            logger.error('Failed to reconnect to browser:', error);
+            throw error;
         }
     }
 
