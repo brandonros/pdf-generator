@@ -26,8 +26,7 @@ export class BrowserPool {
 
     public static getInstance(): BrowserPool {
         if (!BrowserPool.instance) {
-            BrowserPool.instance = new BrowserPool('wss://chromium.debian-k3s');
-            //BrowserPool.instance = new BrowserPool('wss://informally-profound-gecko.ngrok-free.app/');
+            BrowserPool.instance = new BrowserPool(process.env.BROWSER_WS_ENDPOINT as string);
         }
         return BrowserPool.instance;
     }
@@ -203,7 +202,6 @@ export class BrowserPool {
             }
 
             await new Promise(resolve => setTimeout(resolve, 50));
-            logger.debug('No page available, retrying...');
         }
     }
 

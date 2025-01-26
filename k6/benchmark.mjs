@@ -4,9 +4,9 @@ import { check } from 'k6';
 const testPage = open('./test-page.txt');
 
 export const options = {
-  vus: 10,
+  vus: 20,
   duration: '30s',
-  rps: 10
+  rps: 20
 };
 
 export default function () {

@@ -32,7 +32,7 @@ export class RPCHandler {
                             return (await browserPool.capturePDF(params.url));
                         },
                         {
-                            retries: 4, // 5 attempts total (1 initial + 4 retries)
+                            retries: 2, // 3 attempts total (1 initial + 2 retries)
                             minTimeout: 0,
                             maxTimeout: 0,
                         }
