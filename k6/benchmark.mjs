@@ -7,7 +7,7 @@ const testPage = open('./test-page.txt');
 export const options = {
   vus: 40, // virtual users
   rps: 40, // requests per second
-  duration: '30s',
+  duration: '300s',
 };
 
 export default function () {
@@ -24,7 +24,13 @@ export default function () {
   check(res, {
     'status is 200': (r) => r.status === 200,
     'body is not an error': (r) => {
-      const body = JSON.parse(r.body)
+      let body = null
+      try {
+        body = JSON.parse(r.body)
+      } catch (err) {
+        console.error(err.message)
+        return false
+      }
       if (body.error !== undefined) {
         console.error(body.error)
         return false
