@@ -4,10 +4,11 @@ WORKDIR /app
 # Install app dependencies
 COPY package.json ./
 COPY package-lock.json ./
-RUN npm install --production
-RUN npm run build
+RUN npm install
 # Bundle app source
 COPY . .
+# Build app
+RUN npm run build
 # Switch to non-root user
 USER node
 # Export command
