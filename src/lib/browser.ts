@@ -19,10 +19,10 @@ export class BrowserPool {
     async initialize() {
         this.cluster = await Cluster.launch({
             concurrency: Cluster.CONCURRENCY_PAGE,
-            maxConcurrency: 10,
+            maxConcurrency: process.env.MAX_CONCURRENCY ? parseInt(process.env.MAX_CONCURRENCY) : 10,
             timeout: 30000,
             retryLimit: 3,
-            retryDelay: 2000,
+            retryDelay: 1000,
             monitor: false,
             puppeteer: puppeteerCore,
             puppeteerOptions: {
