@@ -3,8 +3,19 @@ import http from 'k6/http';
 import { b64encode } from 'k6/encoding';
 import { check } from 'k6';
 
-//const URL = 'https://pdf-generator.debian-k3s/api/rpc';
-const URL = 'http://localhost:3000/api/rpc';
+export const options = {
+  vus: 100, // virtual users
+  rps: 100, // requests per second
+  duration: '300s',
+};
+
+
+const convertToBase64 = (html) => {
+  return `data:text/html;base64,${b64encode(html)}`;
+}
+
+const URL = 'https://pdf-generator.debian-k3s/api/rpc';
+//const URL = 'http://localhost:3000/api/rpc';
 const TEST_BODY = open('./assets/test-body.html');
 const TEST_HEADER = open('./assets/test-header.html');
 const TEST_FOOTER = open('./assets/test-footer.html');
@@ -17,18 +28,8 @@ const TEST_PDF_OPTIONS = {
       "top": "160px",
       "bottom": "140px"
   },
-  "headerTemplate": convertToBase64(TEST_HEADER),
-  "footerTemplate": convertToBase64(TEST_FOOTER)
-};
-
-const convertToBase64 = (html) => {
-  return `data:text/html;base64,${b64encode(html)}`;
-}
-
-export const options = {
-  vus: 100, // virtual users
-  rps: 100, // requests per second
-  duration: '300s',
+  "headerTemplate": TEST_HEADER,
+  "footerTemplate": TEST_FOOTER
 };
 
 export default function () {
@@ -48,6 +49,18 @@ export default function () {
   check(res, {
     'status is 200': (r) => r.status === 200,
     'body is not an error': (r) => {
+      if (r.body === undefined) {
+        console.error(`r.body === undefined`)
+        return false
+      }
+      if (r.body === null) {
+        console.error(`r.body === null`)
+        return false
+      }
+      if (typeof r.body !== 'string') {
+        console.error(`typeof r.body !== 'string': ${r.body}`)
+        return false
+      }
       let body = null
       try {
         body = JSON.parse(r.body)
@@ -67,7 +80,6 @@ export default function () {
         console.error(`body.result !== string: ${JSON.stringify(body)}`)
         return false
       }
-      console.log(`body.result: ${body.result}`)
       return true
     },
   });
