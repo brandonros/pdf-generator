@@ -17,7 +17,7 @@ export class BrowserPool {
     }
 
     async initialize() {
-        this.cluster = await Cluster.launch({
+        const clusterOptions = {
             concurrency: Cluster.CONCURRENCY_PAGE,
             maxConcurrency: process.env.MAX_CONCURRENCY ? parseInt(process.env.MAX_CONCURRENCY) : 10,
             timeout: 30000,
@@ -36,7 +36,8 @@ export class BrowserPool {
                     "--disable-dev-shm-usage",
                 ],
             },
-        });
+        }
+        this.cluster = await Cluster.launch(clusterOptions);
     }
 
     async capturePDF(url: string, pdfOptions: PDFOptions): Promise<Uint8Array> {
