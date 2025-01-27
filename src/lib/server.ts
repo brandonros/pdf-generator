@@ -21,7 +21,7 @@ export class Server {
 
     async start() {
         // Configure middleware
-        this.app.use(express.json());
+        this.app.use(express.json({ limit: '16mb' })); 
         this.app.use(express.urlencoded({ extended: true }));
 
         // Add your routes here

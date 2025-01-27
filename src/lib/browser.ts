@@ -1,4 +1,4 @@
-import puppeteerCore from 'puppeteer-core';
+import puppeteerCore, { PDFOptions } from 'puppeteer-core';
 import { Cluster } from 'puppeteer-cluster';
 
 export class BrowserPool {
@@ -23,17 +23,23 @@ export class BrowserPool {
             timeout: 30000,
             retryLimit: 3,
             retryDelay: 2000,
-            monitor: true,
+            monitor: false,
             puppeteer: puppeteerCore,
             puppeteerOptions: {
                 executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium',
                 //executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-                args: ['--no-sandbox', '--disable-setuid-sandbox'],
+                args: [
+                    '--no-sandbox', 
+                    '--disable-setuid-sandbox',
+                    "--font-render-hinting=none",
+                    "--disable-blink-features=LayoutNGPrinting",
+                    "--disable-dev-shm-usage",
+                ],
             },
         });
     }
 
-    async capturePDF(url: string): Promise<Uint8Array> {
+    async capturePDF(url: string, pdfOptions: PDFOptions): Promise<Uint8Array> {
         if (!this.cluster) {
             throw new Error('Browser cluster not initialized');
         }
@@ -42,11 +48,7 @@ export class BrowserPool {
                 waitUntil: 'load', // TODO: networkidle0
                 timeout: 30000,
             });
-            const pdf = await page.pdf({
-                format: 'A4',
-                printBackground: true,
-                margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },
-            });
+            const pdf = await page.pdf(pdfOptions);
             return pdf;
         });
     }
